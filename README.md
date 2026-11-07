@@ -1,6 +1,6 @@
 # XCamera
 
-An independent camera application for the Sony Xperia 1 III, combining the photography, video, and cinematography experiences of Sony's Photo Pro, Video Pro, and Cinema Pro into one redesigned application.
+An independent camera application for the Sony Xperia 1 III, combining the photography, videography, and cinematography experiences of Sony's Photo Pro, Video Pro, and Cinema Pro apps into one redesigned application.
 
 XCamera is inspired by Sony's camera applications, not an attempt to impersonate them.
 
