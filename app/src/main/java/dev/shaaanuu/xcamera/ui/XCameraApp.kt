@@ -7,20 +7,29 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.*
 import androidx.activity.result.contract.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.*
 import androidx.compose.ui.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.unit.*
 import androidx.core.content.*
+import dev.shaaanuu.xcamera.R
 import dev.shaaanuu.xcamera.ui.cinema.*
 import dev.shaaanuu.xcamera.ui.navigation.*
 import dev.shaaanuu.xcamera.ui.photo.*
 import dev.shaaanuu.xcamera.ui.video.*
+
+val JetBrainsMono = FontFamily(Font(R.font.jetbrains_mono, FontWeight.Medium))
 
 @Composable
 fun XCameraApp() {
@@ -87,11 +96,37 @@ fun XCameraApp() {
             CameraMode.CINEMA -> CinemaScreen()
         }
 
-        CameraModeNavigation(
-            selectedMode = selectedMode,
-            onModeSelected = { selectedMode = it },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ShutterButton()
+
+            Spacer(modifier = Modifier.height(42.dp))
+
+            CameraModeNavigation(
+                selectedMode = selectedMode,
+                onModeSelected = { selectedMode = it },
+            )
+        }
+    }
+}
+
+@Composable
+fun ShutterButton(modifier: Modifier = Modifier) {
+    val outerSize = 100.dp
+    val innerSize = 83.dp
+
+    Box(
+        modifier =
+            modifier
+                .size(outerSize)
+                .clip(CircleShape)
+                .background(Color(0xFF111318).copy(alpha = 0.45f))
+                .border(width = 1.dp, color = Color.White.copy(alpha = 0.22f), shape = CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(modifier = Modifier.size(innerSize).clip(CircleShape).background(Color(0xFFD62735)))
     }
 }
 
@@ -101,33 +136,69 @@ private fun CameraModeNavigation(
     onModeSelected: (CameraMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CameraMode.entries.forEach { mode ->
-            val isSelected = mode == selectedMode
+    val modes = CameraMode.entries
+    val selectedIndex = modes.indexOf(selectedMode)
 
-            Text(
-                text = mode.label,
-                fontSize = 16.sp,
-                fontWeight =
-                    if (isSelected) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.Normal
-                    },
-                color =
-                    if (isSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                modifier =
-                    Modifier.clickable { onModeSelected(mode) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-            )
+    val selectorWidth = 338.dp
+    val selectorHeight = 42.dp
+    val pillWidth = 105.dp
+    val pillHeight = 32.dp
+
+    val segmentWidth = selectorWidth / modes.size
+    val pillOffset by
+        animateDpAsState(
+            targetValue = (segmentWidth * selectedIndex) + ((segmentWidth - pillWidth) / 2f),
+            label = "pill_offset",
+        )
+
+    Box(modifier = modifier.width(selectorWidth).height(selectorHeight)) {
+        Box(
+            modifier =
+                Modifier.matchParentSize()
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFF0B0D10).copy(alpha = 0.52f))
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(50),
+                    )
+        )
+
+        Box(
+            modifier =
+                Modifier.offset(x = pillOffset, y = 4.dp)
+                    .width(pillWidth)
+                    .height(pillHeight)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color(0xFF111318).copy(alpha = 0.45f))
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.22f),
+                        shape = RoundedCornerShape(50),
+                    )
+        )
+
+        Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            modes.forEach { mode ->
+                Box(
+                    modifier =
+                        Modifier.weight(1f).fillMaxHeight().clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            onModeSelected(mode)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = mode.label.uppercase(),
+                        color = Color(0xFFF2F2F2),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = JetBrainsMono,
+                    )
+                }
+            }
         }
     }
 }
