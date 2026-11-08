@@ -44,8 +44,12 @@ internal class CinemaCameraEngine(
 
     private val exposure =
         CinemaExposure(frameDurationNs = CinemaCameraConfig.FRAME_DURATION_NS, handler = handler) {
-            rebuildRepeating()
-            postExposureState()
+            handler.post {
+                if (!closed) {
+                    rebuildRepeating()
+                    postExposureState()
+                }
+            }
         }
 
     @Volatile private var closed = false
