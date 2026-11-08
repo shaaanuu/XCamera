@@ -4,6 +4,7 @@ import android.util.Size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -11,10 +12,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
+import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
 
 @Composable
 fun CinemaScreen() {
@@ -22,6 +26,7 @@ fun CinemaScreen() {
 
     var engine by remember { mutableStateOf<CinemaCameraEngine?>(null) }
     var previewSize by remember { mutableStateOf<Size?>(null) }
+    var exposureState by remember { mutableStateOf<ExposureSnapshot?>(null) }
 
     val currentEngine = rememberUpdatedState(engine)
 
@@ -37,7 +42,6 @@ fun CinemaScreen() {
                         CinemaCameraEngine(
                             context,
                             object : CinemaCameraEngine.Listener {
-
                                 override fun onPreviewSizeSelected(size: Size) {
                                     previewSize = size
                                 }
@@ -45,6 +49,10 @@ fun CinemaScreen() {
                                 override fun onReady() = Unit
 
                                 override fun onError(message: String) = Unit
+
+                                override fun onExposureChanged(state: ExposureSnapshot) {
+                                    exposureState = state
+                                }
                             },
                         )
 
@@ -66,7 +74,18 @@ fun CinemaScreen() {
                 engine?.stop()
                 engine = null
                 previewSize = null
+                exposureState = null
             },
+        )
+
+        CinemaExposureControls(
+            state = exposureState,
+            enabled = engine != null,
+            onCycleIso = { engine?.cycleIso() },
+            onAutoIso = { engine?.requestAutoIso() },
+            onCycleShutter = { engine?.cycleShutter() },
+            onAutoShutter = { engine?.requestAutoShutter() },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 272.dp),
         )
     }
 }
