@@ -313,17 +313,11 @@ internal class CinemaCameraEngine(
     private fun choosePreviewFpsRange(characteristics: CameraCharacteristics): Range<Int> {
         val ranges =
             characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                ?: emptyArray()
+                ?: error("Camera exposes no FPS ranges")
 
         return ranges.firstOrNull {
-            it.lower == CinemaCameraConfig.PREVIEW_MIN_FPS &&
-                it.upper == CinemaCameraConfig.NOMINAL_FPS
-        }
-            ?: ranges.firstOrNull {
-                it.lower == CinemaCameraConfig.NOMINAL_FPS &&
-                    it.upper == CinemaCameraConfig.NOMINAL_FPS
-            }
-            ?: error("Camera does not expose the required 30-60 or fixed-60 FPS range")
+            it.lower == CinemaCameraConfig.NOMINAL_FPS && it.upper == CinemaCameraConfig.NOMINAL_FPS
+        } ?: error("Camera does not expose the fixed-60 FPS range")
     }
 
     private fun fail(message: String) {

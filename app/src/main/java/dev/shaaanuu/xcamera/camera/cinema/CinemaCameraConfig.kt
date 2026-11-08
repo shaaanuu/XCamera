@@ -7,8 +7,7 @@ internal object CinemaCameraConfig {
     // Preview
     const val PREVIEW_WIDTH = 2520
     const val PREVIEW_HEIGHT = 1080
-    const val PREVIEW_MIN_FPS = 30
-    const val PREVIEW_FRAME_DURATION_NS = 33_333_334L
+    const val PREVIEW_FRAME_DURATION_NS = 16_683_333L
 
     // Cinema aspect ratio
     const val CINEMA_ASPECT_WIDTH = 3840
