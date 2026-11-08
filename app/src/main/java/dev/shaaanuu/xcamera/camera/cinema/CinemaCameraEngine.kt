@@ -1,6 +1,8 @@
 package dev.shaaanuu.xcamera.camera.cinema
 
 import android.annotation.SuppressLint
+import android.content.ContentValues
+import android.content.Context
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -8,9 +10,14 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.net.Uri
+import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
+import android.util.Log
 import android.util.Range
 import android.util.Size
 import android.view.Surface
@@ -18,12 +25,14 @@ import dev.shaaanuu.xcamera.camera.cinema.recording.HlgEncoder
 import dev.shaaanuu.xcamera.camera.core.CameraController
 import dev.shaaanuu.xcamera.camera.core.CameraSession
 import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 
-internal class CinemaCameraEngine(
-    context: android.content.Context,
-    private val listener: Listener,
-) {
+internal data class CinemaState(val exposure: ExposureSnapshot, val recording: Boolean)
+
+internal class CinemaCameraEngine(private val context: Context, private val listener: Listener) {
     interface Listener {
         fun onPreviewSizeSelected(size: Size)
 
@@ -31,7 +40,12 @@ internal class CinemaCameraEngine(
 
         fun onError(message: String)
 
-        fun onExposureChanged(state: ExposureSnapshot)
+        fun onStateChanged(state: CinemaState)
+    }
+
+    companion object {
+        private const val TAG = "XCamera-CinemaEngine"
+        private val RECORDING_DIRECTORY = "${Environment.DIRECTORY_DCIM}/XCamera/Cinema"
     }
 
     private val controller = CameraController(context)
@@ -47,13 +61,14 @@ internal class CinemaCameraEngine(
             handler.post {
                 if (!closed) {
                     rebuildRepeating()
-                    postExposureState()
+                    postState()
                 }
             }
         }
 
     @Volatile private var closed = false
     private var started = false
+    @Volatile private var recording = false
 
     private var cameraDevice: CameraDevice? = null
     private var cameraSession: CameraSession? = null
@@ -67,6 +82,9 @@ internal class CinemaCameraEngine(
     private var activeArrayWidth = 0
     private var activeArrayHeight = 0
     private var focalLengthMm = 0f
+
+    private var recordingUri: Uri? = null
+    private var recordingPfd: ParcelFileDescriptor? = null
 
     private val captureCallback =
         object : CameraCaptureSession.CaptureCallback() {
@@ -121,12 +139,109 @@ internal class CinemaCameraEngine(
 
     fun requestAutoShutter() = handler.post { if (!closed) exposure.requestAutoShutter() }
 
+    fun startRecording() = handler.post {
+        if (closed || recording) return@post
+        if (!sessionConfigured) {
+            Log.w(TAG, "startRecording: session not ready")
+            return@post
+        }
+
+        try {
+            val (uri, pfd) = createRecordingEntry()
+            recordingUri = uri
+            recordingPfd = pfd
+
+            encoder.beginRecording(pfd.fileDescriptor)
+
+            recording = true
+            rebuildRepeating()
+            postState()
+            Log.i(TAG, "Recording started: $uri")
+        } catch (error: Throwable) {
+            Log.e(TAG, "startRecording failed", error)
+            runCatching { recordingPfd?.close() }
+            recordingPfd = null
+            recordingUri?.let { deleteRecordingEntry(it) }
+            recordingUri = null
+            recording = false
+        }
+    }
+
+    fun stopRecording() = handler.post {
+        if (!recording) return@post
+
+        recording = false
+        encoder.stopRecording()
+        rebuildRepeating()
+
+        val uri = recordingUri
+        val pfd = recordingPfd
+        val samples = encoder.samplesWritten
+
+        recordingUri = null
+        recordingPfd = null
+
+        runCatching { pfd?.close() }
+
+        if (samples == 0) {
+            Log.w(TAG, "Recording produced no samples, deleting")
+            uri?.let { deleteRecordingEntry(it) }
+        } else {
+            uri?.let { finalizeRecordingEntry(it) }
+            Log.i(TAG, "Recording stopped: $samples samples, uri=$uri")
+        }
+
+        postState()
+    }
+
     @Synchronized
     fun stop() {
         if (closed) return
+        if (recording) {
+            // Best effort — the drain thread may already be gone.
+            recording = false
+            encoder.stopRecording()
+            recordingPfd?.let { runCatching { it.close() } }
+            recordingUri?.let { finalizeRecordingEntry(it) }
+            recordingUri = null
+            recordingPfd = null
+        }
         closed = true
         cleanup()
         cameraThread.quitSafely()
+    }
+
+    private fun createRecordingEntry(): Pair<Uri, ParcelFileDescriptor> {
+        val resolver = context.contentResolver
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val name = "XCamera_Cinema_$timestamp"
+
+        val values =
+            ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, "$name.mp4")
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH, RECORDING_DIRECTORY)
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+
+        val uri =
+            resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: error("MediaStore insert failed")
+
+        val pfd =
+            resolver.openFileDescriptor(uri, "w")
+                ?: error("MediaStore openFileDescriptor returned null")
+
+        return uri to pfd
+    }
+
+    private fun finalizeRecordingEntry(uri: Uri) {
+        val values = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+        runCatching { context.contentResolver.update(uri, values, null, null) }
+    }
+
+    private fun deleteRecordingEntry(uri: Uri) {
+        runCatching { context.contentResolver.delete(uri, null, null) }
     }
 
     private fun choosePreviewSize(characteristics: CameraCharacteristics): Size {
@@ -239,7 +354,9 @@ internal class CinemaCameraEngine(
                         mainHandler.post {
                             if (!closed) {
                                 listener.onReady()
-                                listener.onExposureChanged(exposure.snapshot())
+                                listener.onStateChanged(
+                                    CinemaState(exposure.snapshot(), recording = recording)
+                                )
                             }
                         }
                     } catch (error: Throwable) {
@@ -261,16 +378,22 @@ internal class CinemaCameraEngine(
         val preview = previewSurface ?: return
 
         try {
-            val request = buildRequest(camera, characteristics).apply { addTarget(preview) }.build()
-            session.setRepeatingRequest(request, captureCallback)
+            val builder =
+                buildRequest(camera, characteristics).apply {
+                    addTarget(preview)
+                    if (recording) {
+                        encoderSurface?.takeIf { it.isValid }?.let { addTarget(it) }
+                    }
+                }
+            session.setRepeatingRequest(builder.build(), captureCallback)
         } catch (error: Throwable) {
             fail("Rebuild request failed: ${error.message}")
         }
     }
 
-    private fun postExposureState() {
-        val state = exposure.snapshot()
-        mainHandler.post { if (!closed) listener.onExposureChanged(state) }
+    private fun postState() {
+        val state = CinemaState(exposure.snapshot(), recording = recording)
+        mainHandler.post { if (!closed) listener.onStateChanged(state) }
     }
 
     private fun buildRequest(

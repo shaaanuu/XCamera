@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.*
 import androidx.compose.ui.unit.*
 import androidx.core.content.*
 import dev.shaaanuu.xcamera.R
+import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
 import dev.shaaanuu.xcamera.ui.cinema.*
 import dev.shaaanuu.xcamera.ui.navigation.*
 import dev.shaaanuu.xcamera.ui.photo.*
@@ -89,18 +90,37 @@ fun XCameraApp() {
 
     var selectedMode by rememberSaveable { mutableStateOf(CameraMode.CINEMA) }
 
+    val cinemaEngineState = remember { mutableStateOf<CinemaCameraEngine?>(null) }
+    val isRecording = remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedMode) {
+        if (selectedMode != CameraMode.CINEMA) {
+            cinemaEngineState.value?.stop()
+            cinemaEngineState.value = null
+            isRecording.value = false
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         when (selectedMode) {
             CameraMode.PHOTO -> PhotoScreen()
             CameraMode.VIDEO -> VideoScreen()
-            CameraMode.CINEMA -> CinemaScreen()
+            CameraMode.CINEMA ->
+                CinemaScreen(engineState = cinemaEngineState, recordingState = isRecording)
         }
 
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ShutterButton()
+            ShutterButton(
+                recording = isRecording.value,
+                enabled = selectedMode == CameraMode.CINEMA && cinemaEngineState.value != null,
+                onClick = {
+                    val engine = cinemaEngineState.value ?: return@ShutterButton
+                    if (isRecording.value) engine.stopRecording() else engine.startRecording()
+                },
+            )
 
             Spacer(modifier = Modifier.height(42.dp))
 
@@ -113,9 +133,15 @@ fun XCameraApp() {
 }
 
 @Composable
-fun ShutterButton(modifier: Modifier = Modifier) {
+fun ShutterButton(
+    recording: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     val outerSize = 100.dp
     val innerSize = 83.dp
+    val alpha = if (enabled) 1f else 0.4f
 
     Box(
         modifier =
@@ -123,10 +149,29 @@ fun ShutterButton(modifier: Modifier = Modifier) {
                 .size(outerSize)
                 .clip(CircleShape)
                 .background(Color(0xFF111318).copy(alpha = 0.45f))
-                .border(width = 1.dp, color = Color.White.copy(alpha = 0.22f), shape = CircleShape),
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.22f * alpha),
+                    shape = CircleShape,
+                )
+                .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        Box(modifier = Modifier.size(innerSize).clip(CircleShape).background(Color(0xFFD62735)))
+        if (recording) {
+            Box(
+                modifier =
+                    Modifier.size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFF2F2F2))
+            )
+        } else {
+            Box(
+                modifier =
+                    Modifier.size(innerSize)
+                        .clip(CircleShape)
+                        .background(Color(0xFFD62735).copy(alpha = alpha))
+            )
+        }
     }
 }
 

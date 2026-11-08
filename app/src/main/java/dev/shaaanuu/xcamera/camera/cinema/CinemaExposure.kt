@@ -6,10 +6,6 @@ import android.util.Log
 import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
 import dev.shaaanuu.xcamera.camera.core.exposure.writeExposure
 
-/**
- * Cinema exposure. Shutter is an angle in degrees; A-ISO/A-SH sample the camera AE for a few frames
- * and freeze the converged value.
- */
 internal class CinemaExposure(
     private val frameDurationNs: Long,
     private val handler: Handler,

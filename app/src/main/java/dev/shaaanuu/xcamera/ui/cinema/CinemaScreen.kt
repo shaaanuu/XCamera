@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,19 +20,32 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
-import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
+import dev.shaaanuu.xcamera.camera.cinema.CinemaState
 
 @Composable
-fun CinemaScreen() {
+internal fun CinemaScreen(
+    engineState: MutableState<CinemaCameraEngine?>,
+    recordingState: MutableState<Boolean>,
+) {
     val context = LocalContext.current
 
     var engine by remember { mutableStateOf<CinemaCameraEngine?>(null) }
     var previewSize by remember { mutableStateOf<Size?>(null) }
-    var exposureState by remember { mutableStateOf<ExposureSnapshot?>(null) }
+    var cinemaState by remember { mutableStateOf<CinemaState?>(null) }
 
     val currentEngine = rememberUpdatedState(engine)
 
-    DisposableEffect(Unit) { onDispose { currentEngine.value?.stop() } }
+    LaunchedEffect(engine) { engineState.value = engine }
+
+    LaunchedEffect(cinemaState?.recording) { recordingState.value = cinemaState?.recording == true }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            currentEngine.value?.stop()
+            engineState.value = null
+            recordingState.value = false
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         CinemaPreview(
@@ -50,8 +65,8 @@ fun CinemaScreen() {
 
                                 override fun onError(message: String) = Unit
 
-                                override fun onExposureChanged(state: ExposureSnapshot) {
-                                    exposureState = state
+                                override fun onStateChanged(state: CinemaState) {
+                                    cinemaState = state
                                 }
                             },
                         )
@@ -74,12 +89,14 @@ fun CinemaScreen() {
                 engine?.stop()
                 engine = null
                 previewSize = null
-                exposureState = null
+                cinemaState = null
+                engineState.value = null
+                recordingState.value = false
             },
         )
 
         CinemaExposureControls(
-            state = exposureState,
+            state = cinemaState?.exposure,
             enabled = engine != null,
             onCycleIso = { engine?.cycleIso() },
             onAutoIso = { engine?.requestAutoIso() },
