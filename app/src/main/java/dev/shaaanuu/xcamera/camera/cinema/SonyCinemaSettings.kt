@@ -1,10 +1,11 @@
-package dev.shaaanuu.xcamera.camera.sony
+package dev.shaaanuu.xcamera.camera.cinema
 
 import android.hardware.camera2.CaptureRequest
+import dev.shaaanuu.xcamera.camera.sony.SonyVendorKeys
 
-internal object SonyCaptureSettings {
+internal object SonyCinemaSettings {
 
-    fun applyBasePipeline(
+    fun applyCinemaPipeline(
         builder: CaptureRequest.Builder,
         activeArrayWidth: Int,
         activeArrayHeight: Int,
