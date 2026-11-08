@@ -2,25 +2,50 @@ package dev.shaaanuu.xcamera.ui.cinema
 
 import android.util.Size
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
 import dev.shaaanuu.xcamera.camera.cinema.CinemaState
+import dev.shaaanuu.xcamera.ui.JetBrainsMono
+import kotlin.math.abs
+
+private val ISO_VALUES = listOf(64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800)
+
+private val SHUTTER_VALUES =
+    listOf(
+        2.8f,
+        3.6f,
+        4.5f,
+        5.6f,
+        7.2f,
+        9f,
+        11.2f,
+        14.1f,
+        18f,
+        22.5f,
+        28.1f,
+        36f,
+        45f,
+        56.3f,
+        72f,
+        90f,
+        112.5f,
+        144f,
+        150f,
+        172.8f,
+        180f,
+        225f,
+        300f,
+        360f,
+    )
 
 @Composable
 internal fun CinemaScreen(
@@ -46,6 +71,11 @@ internal fun CinemaScreen(
             recordingState.value = false
         }
     }
+
+    val exposure = cinemaState?.exposure
+    val isoSelected = parseIso(exposure?.isoLabel) ?: 400
+    val shutterSelected = parseShutterAngle(exposure?.shutterLabel) ?: 360f
+    val shutterExposureLabel = parseExposureTime(exposure?.shutterLabel) ?: "1/60 SEC"
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         CinemaPreview(
@@ -95,14 +125,70 @@ internal fun CinemaScreen(
             },
         )
 
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 32.dp)
+                    .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "N/A",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontFamily = JetBrainsMono,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "4k · 120",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontFamily = JetBrainsMono,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+
         CinemaExposureControls(
-            state = cinemaState?.exposure,
+            isoValues = ISO_VALUES,
+            isoSelected = isoSelected,
+            isoPending = exposure?.isoPending == true,
+            shutterValues = SHUTTER_VALUES,
+            shutterSelected = shutterSelected,
+            shutterExposureLabel = shutterExposureLabel,
+            shutterPending = exposure?.shutterPending == true,
             enabled = engine != null,
-            onCycleIso = { engine?.cycleIso() },
+            onIsoSelected = { target ->
+                val from = ISO_VALUES.indexOf(isoSelected)
+                val to = ISO_VALUES.indexOf(target)
+                if (from >= 0 && to >= 0 && from != to) {
+                    repeat(abs(to - from)) { engine?.cycleIso() }
+                }
+            },
             onAutoIso = { engine?.requestAutoIso() },
-            onCycleShutter = { engine?.cycleShutter() },
+            onShutterSelected = { target ->
+                val from = SHUTTER_VALUES.indexOf(shutterSelected)
+                val to = SHUTTER_VALUES.indexOf(target)
+                if (from >= 0 && to >= 0 && from != to) {
+                    repeat(abs(to - from)) { engine?.cycleShutter() }
+                }
+            },
             onAutoShutter = { engine?.requestAutoShutter() },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 272.dp),
+            modifier =
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 260.dp).fillMaxWidth(),
         )
     }
+}
+
+private fun parseIso(label: String?): Int? = label?.removePrefix("ISO")?.trim()?.toIntOrNull()
+
+private fun parseShutterAngle(label: String?): Float? {
+    if (label == null) return null
+    val anglePart = label.substringBefore("(").trim().removeSuffix("°").trim()
+    return anglePart.toFloatOrNull()
+}
+
+private fun parseExposureTime(label: String?): String? {
+    if (label == null) return null
+    val match = Regex("""\(([^)]+)\)""").find(label) ?: return null
+    return "${match.groupValues[1].trim()} SEC"
 }
