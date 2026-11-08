@@ -18,7 +18,6 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
-import android.util.Range
 import android.util.Size
 import android.view.Surface
 import dev.shaaanuu.xcamera.camera.cinema.recording.HlgEncoder
@@ -95,6 +94,8 @@ internal class CinemaCameraEngine(private val context: Context, private val list
             ) {
                 val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
                 val expNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
+                val fdNs = result.get(CaptureResult.SENSOR_FRAME_DURATION) ?: 0L
+                Log.i(TAG, "result ISO=$iso exp=$expNs frameDur=$fdNs rec=$recording")
                 exposure.onCaptureResult(iso, expNs)
             }
         }
@@ -198,7 +199,6 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     fun stop() {
         if (closed) return
         if (recording) {
-            // Best effort — the drain thread may already be gone.
             recording = false
             encoder.stopRecording()
             recordingPfd?.let { runCatching { it.close() } }
@@ -327,7 +327,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         val isoHigh = sensRange?.upper ?: Int.MAX_VALUE
         exposure.buildOptions(isoLow, isoHigh)
 
-        val sessionParameters = buildRequest(camera, characteristics).build()
+        val sessionParameters = buildRequest(camera, characteristics, recording = false).build()
 
         val session = CameraSession(cameraDevice = camera, callbackHandler = handler)
         cameraSession = session
@@ -344,7 +344,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
                         }
 
                         val request =
-                            buildRequest(camera, characteristics)
+                            buildRequest(camera, characteristics, recording = false)
                                 .apply { addTarget(preview) }
                                 .build()
 
@@ -377,11 +377,12 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         val characteristics = cachedCharacteristics ?: return
         val preview = previewSurface ?: return
 
+        val rec = recording
         try {
             val builder =
-                buildRequest(camera, characteristics).apply {
+                buildRequest(camera, characteristics, recording = rec).apply {
                     addTarget(preview)
-                    if (recording) {
+                    if (rec) {
                         encoderSurface?.takeIf { it.isValid }?.let { addTarget(it) }
                     }
                 }
@@ -399,6 +400,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     private fun buildRequest(
         camera: CameraDevice,
         characteristics: CameraCharacteristics,
+        recording: Boolean,
     ): CaptureRequest.Builder {
         return camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
@@ -408,8 +410,14 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
             exposure.applyTo(this)
 
-            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, choosePreviewFpsRange(characteristics))
-            set(CaptureRequest.SENSOR_FRAME_DURATION, CinemaCameraConfig.PREVIEW_FRAME_DURATION_NS)
+            set(
+                CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                CinemaCameraConfig.pickFpsRange(characteristics, recording),
+            )
+            set(
+                CaptureRequest.SENSOR_FRAME_DURATION,
+                CinemaCameraConfig.frameDurationFor(recording),
+            )
 
             val oisModes =
                 characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)
@@ -431,16 +439,6 @@ internal class CinemaCameraEngine(private val context: Context, private val list
                 lookId = CinemaCameraConfig.DEFAULT_LOOK_ID,
             )
         }
-    }
-
-    private fun choosePreviewFpsRange(characteristics: CameraCharacteristics): Range<Int> {
-        val ranges =
-            characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                ?: error("Camera exposes no FPS ranges")
-
-        return ranges.firstOrNull {
-            it.lower == CinemaCameraConfig.NOMINAL_FPS && it.upper == CinemaCameraConfig.NOMINAL_FPS
-        } ?: error("Camera does not expose the fixed-60 FPS range")
     }
 
     private fun fail(message: String) {
