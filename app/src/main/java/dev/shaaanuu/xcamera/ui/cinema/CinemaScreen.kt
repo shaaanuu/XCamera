@@ -1,6 +1,11 @@
 package dev.shaaanuu.xcamera.ui.cinema
 
 import android.util.Size
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
@@ -12,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraConfig
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
 import dev.shaaanuu.xcamera.camera.cinema.CinemaState
 import dev.shaaanuu.xcamera.ui.JetBrainsMono
@@ -57,6 +63,7 @@ internal fun CinemaScreen(
     var engine by remember { mutableStateOf<CinemaCameraEngine?>(null) }
     var previewSize by remember { mutableStateOf<Size?>(null) }
     var cinemaState by remember { mutableStateOf<CinemaState?>(null) }
+    var lookMenuVisible by remember { mutableStateOf(false) }
 
     val currentEngine = rememberUpdatedState(engine)
 
@@ -76,6 +83,7 @@ internal fun CinemaScreen(
     val isoSelected = parseIso(exposure?.isoLabel) ?: 400
     val shutterSelected = parseShutterAngle(exposure?.shutterLabel) ?: 360f
     val shutterExposureLabel = parseExposureTime(exposure?.shutterLabel) ?: "1/60 SEC"
+    val lookId = cinemaState?.lookId ?: CinemaCameraConfig.DEFAULT_LOOK_ID
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         CinemaPreview(
@@ -122,6 +130,7 @@ internal fun CinemaScreen(
                 cinemaState = null
                 engineState.value = null
                 recordingState.value = false
+                lookMenuVisible = false
             },
         )
 
@@ -132,12 +141,11 @@ internal fun CinemaScreen(
                     .align(Alignment.TopCenter),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(
-                text = "N/A",
-                color = Color.White,
-                fontSize = 14.sp,
-                fontFamily = JetBrainsMono,
-                fontWeight = FontWeight.Medium,
+            CinemaLookButton(
+                lookId = lookId,
+                expanded = lookMenuVisible,
+                enabled = engine != null,
+                onToggle = { lookMenuVisible = !lookMenuVisible },
             )
             Text(
                 text = "4k · 120",
@@ -145,6 +153,22 @@ internal fun CinemaScreen(
                 fontSize = 14.sp,
                 fontFamily = JetBrainsMono,
                 fontWeight = FontWeight.Medium,
+            )
+        }
+
+        AnimatedVisibility(
+            visible = lookMenuVisible,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 }),
+            modifier = Modifier.align(Alignment.TopStart).padding(top = 80.dp, start = 16.dp),
+        ) {
+            CinemaLookCard(
+                lookId = lookId,
+                enabled = engine != null,
+                onLookSelected = { id ->
+                    engine?.setLook(id)
+                    lookMenuVisible = false
+                },
             )
         }
 

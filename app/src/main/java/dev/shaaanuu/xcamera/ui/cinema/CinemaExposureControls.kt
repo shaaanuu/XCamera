@@ -33,12 +33,12 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-private val ControlSurface = Color(0xFF1C1D22)
+internal val ControlSurface = Color(0xFF1C1D22)
 private val AutoPillBackground = Color(0xFF292A30)
-private val PrimaryText = Color(0xFFFFFFFF)
+internal val PrimaryText = Color(0xFFFFFFFF)
 private val SecondaryText = Color(0xFF92929B)
 private val DialBaselineColor = Color(0xFF45464D)
-private val SelectionIndicator = Color(0xFFD62735)
+internal val SelectionIndicator = Color(0xFFD62735)
 private val MeteringIndicator = Color(0xFFFF9800)
 
 private enum class ActiveControl {
@@ -155,19 +155,21 @@ private fun ControlTextButton(text: String, isActive: Boolean, onClick: () -> Un
 }
 
 @Composable
-private fun ExposureControlCard(
+internal fun ExposureControlCard(
     primaryValue: String,
     secondaryValue: String?,
-    pending: Boolean,
-    enabled: Boolean,
-    onAuto: () -> Unit,
+    pending: Boolean = false,
+    enabled: Boolean = true,
+    onAuto: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
     dial: @Composable () -> Unit,
 ) {
     val alpha = if (enabled) 1f else 0.45f
 
     Column(
         modifier =
-            Modifier.fillMaxWidth()
+            modifier
+                .fillMaxWidth()
                 .padding(horizontal = 8.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(ControlSurface.copy(alpha = alpha))
@@ -196,9 +198,10 @@ private fun ExposureControlCard(
 
         dial()
 
-        Spacer(Modifier.height(6.dp))
-
-        AutoPill(pending = pending, enabled = enabled, onClick = onAuto)
+        if (onAuto != null) {
+            Spacer(Modifier.height(6.dp))
+            AutoPill(pending = pending, enabled = enabled, onClick = onAuto)
+        }
     }
 }
 
@@ -228,7 +231,7 @@ private fun AutoPill(pending: Boolean, enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SteppedDial(
+internal fun SteppedDial(
     values: List<String>,
     selectedIndex: Int,
     onSelectedIndexChange: (Int) -> Unit,

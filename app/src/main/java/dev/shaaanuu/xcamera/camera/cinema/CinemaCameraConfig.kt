@@ -7,6 +7,46 @@ internal object CinemaCameraConfig {
     const val CAMERA_ID = "2"
     const val DEFAULT_LOOK_ID = 1
 
+    val LOOK_IDS = intArrayOf(0, 9, 1, 2, 3, 4, 5, 6, 7, 8)
+
+    val LOOK_SHORT =
+        arrayOf(
+            "Off",
+            "N/A",
+            "VENICE",
+            "Opaque",
+            "Bright",
+            "Warm",
+            "Strong",
+            "Cool",
+            "Soft",
+            "Mono",
+        )
+
+    val LOOK_FULL =
+        arrayOf(
+            "Off",
+            "N/A",
+            "VENICE CS",
+            "Opaque/BU60YE60",
+            "Bright/BU20YE60",
+            "Warm/YE80",
+            "Strong/BU100",
+            "Cool/BU60",
+            "Soft/YE40",
+            "Soft Monochrome",
+        )
+
+    fun lookShortName(lookId: Int): String {
+        val idx = LOOK_IDS.indexOf(lookId)
+        return if (idx >= 0) LOOK_SHORT[idx] else "Off"
+    }
+
+    fun lookFullName(lookId: Int): String {
+        val idx = LOOK_IDS.indexOf(lookId)
+        return if (idx >= 0) LOOK_FULL[idx] else "Off"
+    }
+
     // Preview
     const val PREVIEW_MIN_FPS = 30
     const val PREVIEW_FRAME_DURATION_NS = 33_366_666L

@@ -29,7 +29,11 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
-internal data class CinemaState(val exposure: ExposureSnapshot, val recording: Boolean)
+internal data class CinemaState(
+    val exposure: ExposureSnapshot,
+    val recording: Boolean,
+    val lookId: Int,
+)
 
 internal class CinemaCameraEngine(private val context: Context, private val listener: Listener) {
     interface Listener {
@@ -68,6 +72,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     @Volatile private var closed = false
     private var started = false
     @Volatile private var recording = false
+    @Volatile private var currentLookId: Int = CinemaCameraConfig.DEFAULT_LOOK_ID
 
     private var cameraDevice: CameraDevice? = null
     private var cameraSession: CameraSession? = null
@@ -139,6 +144,15 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     fun requestAutoIso() = handler.post { if (!closed) exposure.requestAutoIso() }
 
     fun requestAutoShutter() = handler.post { if (!closed) exposure.requestAutoShutter() }
+
+    fun setLook(lookId: Int) = handler.post {
+        if (closed) return@post
+        if (lookId == currentLookId) return@post
+        if (!CinemaCameraConfig.LOOK_IDS.contains(lookId)) return@post
+        currentLookId = lookId
+        rebuildRepeating()
+        postState()
+    }
 
     fun startRecording() = handler.post {
         if (closed || recording) return@post
@@ -355,7 +369,11 @@ internal class CinemaCameraEngine(private val context: Context, private val list
                             if (!closed) {
                                 listener.onReady()
                                 listener.onStateChanged(
-                                    CinemaState(exposure.snapshot(), recording = recording)
+                                    CinemaState(
+                                        exposure.snapshot(),
+                                        recording = recording,
+                                        lookId = currentLookId,
+                                    )
                                 )
                             }
                         }
@@ -393,7 +411,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     }
 
     private fun postState() {
-        val state = CinemaState(exposure.snapshot(), recording = recording)
+        val state = CinemaState(exposure.snapshot(), recording = recording, lookId = currentLookId)
         mainHandler.post { if (!closed) listener.onStateChanged(state) }
     }
 
@@ -434,10 +452,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
                 activeArrayHeight = activeArrayHeight,
                 focalLengthMm = focalLengthMm,
             )
-            SonyCinemaSettings.applyCinemaLook(
-                builder = this,
-                lookId = CinemaCameraConfig.DEFAULT_LOOK_ID,
-            )
+            SonyCinemaSettings.applyCinemaLook(builder = this, lookId = currentLookId)
         }
     }
 
