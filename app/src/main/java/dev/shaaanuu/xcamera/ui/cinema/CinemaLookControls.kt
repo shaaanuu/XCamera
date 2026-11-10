@@ -72,6 +72,7 @@ internal fun CinemaLookCard(
                 .width(IntrinsicSize.Max)
                 .clip(RoundedCornerShape(16.dp))
                 .background(ControlSurface.copy(alpha = alpha))
+                .padding(vertical = 6.dp)
     ) {
         CinemaCameraConfig.LOOK_IDS.forEachIndexed { index, id ->
             val selected = id == lookId
