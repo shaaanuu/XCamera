@@ -115,7 +115,6 @@ internal class HlgEncoder {
             muxer = m
             muxerStarted = true
             firstPts = -1L
-            Log.i(TAG, "Muxer opened")
         } catch (error: Throwable) {
             Log.e(TAG, "Muxer open failed", error)
             pendingFd = null

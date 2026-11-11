@@ -1,11 +1,8 @@
 package dev.shaaanuu.xcamera.camera.sony
 
 import android.hardware.camera2.CaptureRequest
-import android.util.Log
 
 internal object SonyVendorKeys {
-
-    private const val TAG = "XCamera"
 
     // Cinema and exposure
     val cinemaProfile = byteKey("com.sonymobile.control.cinemaProfile")
@@ -62,7 +59,6 @@ internal object SonyVendorKeys {
         return try {
             CaptureRequest.Key(name, type)
         } catch (error: Throwable) {
-            Log.w(TAG, "Vendor key unavailable: $name", error)
             null
         }
     }

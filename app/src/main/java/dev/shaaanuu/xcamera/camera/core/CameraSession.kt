@@ -15,10 +15,6 @@ internal class CameraSession(
     private val callbackHandler: Handler,
 ) {
 
-    companion object {
-        private const val TAG = "XCamera-Session"
-    }
-
     @Volatile private var activeSession: CameraCaptureSession? = null
 
     @Volatile private var closed = false

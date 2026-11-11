@@ -2,7 +2,6 @@ package dev.shaaanuu.xcamera.camera.cinema
 
 import android.hardware.camera2.CaptureRequest
 import android.os.Handler
-import android.util.Log
 import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
 import dev.shaaanuu.xcamera.camera.core.exposure.writeExposure
 
@@ -12,8 +11,6 @@ internal class CinemaExposure(
     private val onChanged: () -> Unit,
 ) {
     companion object {
-        private const val TAG = "XCamera-CinemaExp"
-
         const val PENDING_NONE = 0
         const val PENDING_ISO = 1
         const val PENDING_SHUTTER = 2
@@ -87,15 +84,12 @@ internal class CinemaExposure(
     private var currentIsoIndex = 0
     private var currentShutterIndex = 0
 
-    // Manual selections. null means "use the last sampled value".
     @Volatile private var manualIso: Int? = null
     @Volatile private var manualExposureNs: Long? = null
 
-    // Last sampled (metered) values.
     @Volatile private var sampledIso: Int = 0
     @Volatile private var sampledExposureNs: Long = 0L
 
-    // One-shot metering.
     @Volatile private var pendingSample: Int = PENDING_NONE
     @Volatile private var sampleResults: Int = 0
     @Volatile private var lastResultIso: Int = 0
@@ -120,10 +114,6 @@ internal class CinemaExposure(
             }
         }
 
-        Log.i(TAG, "ISO options: $availableIso")
-        Log.i(TAG, "shutter options: $availableShutterAngles")
-
-        // Select defaults by value: filtered lists may not match enum indices.
         val isoIdx = availableIso.indexOf(CinemaCameraConfig.DEFAULT_ISO)
         currentIsoIndex = if (isoIdx >= 0) isoIdx else 0
         manualIso = if (isoIdx >= 0) CinemaCameraConfig.DEFAULT_ISO else null
@@ -139,7 +129,6 @@ internal class CinemaExposure(
         currentIsoIndex = (currentIsoIndex + 1) % availableIso.size
         manualIso = availableIso[currentIsoIndex]
         cancelPendingSample()
-        Log.i(TAG, "ISO -> $manualIso")
         onChanged()
     }
 
@@ -148,11 +137,6 @@ internal class CinemaExposure(
         currentShutterIndex = (currentShutterIndex + 1) % availableShutterAngles.size
         manualExposureNs = shutterNanos(availableShutterAngles[currentShutterIndex])
         cancelPendingSample()
-        Log.i(
-            TAG,
-            "shutter -> ${availableShutterAngles[currentShutterIndex]}° " +
-                "(${manualExposureNs}ns)",
-        )
         onChanged()
     }
 
@@ -163,27 +147,23 @@ internal class CinemaExposure(
     private fun requestSample(what: Int) {
         pendingSample = what
         sampleResults = 0
-        Log.i(TAG, "requestSample ${if (what == PENDING_ISO) "ISO" else "shutter"}")
         scheduleTimeout(what)
         onChanged()
     }
 
     private fun cancelPendingSample() {
         if (pendingSample == PENDING_NONE) return
-        Log.i(TAG, "cancel pending sample")
         pendingSample = PENDING_NONE
         sampleResults = 0
         clearTimeout()
     }
 
-    /** Called from the camera thread for every capture result. */
     fun onCaptureResult(iso: Int, exposureNs: Long) {
         if (iso > 0) lastResultIso = iso
         if (exposureNs > 0L) lastResultExposureNs = exposureNs
 
         val want = pendingSample
         if (want == PENDING_NONE) return
-        // The first frame after enabling AE still carries the old value.
         if (++sampleResults < SAMPLE_RESULTS) return
 
         if (want == PENDING_ISO && lastResultIso > 0) {
@@ -193,7 +173,6 @@ internal class CinemaExposure(
             currentIsoIndex = availableIso.indexOf(snapped).coerceAtLeast(0)
             pendingSample = PENDING_NONE
             clearTimeout()
-            Log.i(TAG, "ISO auto sampled -> $lastResultIso (snapped $snapped)")
             onChanged()
             return
         }
@@ -205,11 +184,6 @@ internal class CinemaExposure(
                 availableShutterAngles.indexOfFirst { shutterNanos(it) == snapped }.coerceAtLeast(0)
             pendingSample = PENDING_NONE
             clearTimeout()
-            Log.i(
-                TAG,
-                "shutter auto sampled -> ${lastResultExposureNs}ns " +
-                    "(snapped $snapped = ${timeLabelOf(snapped)})",
-            )
             onChanged()
         }
     }
@@ -218,11 +192,6 @@ internal class CinemaExposure(
         val iso = manualIso ?: sampledIso
         val expNs = manualExposureNs ?: sampledExposureNs
         val manual = pendingSample == PENDING_NONE && iso > 0 && expNs > 0L
-        if (manual) {
-            Log.i(TAG, "manual exposure ISO$iso ${expNs}ns = ${timeLabelOf(expNs)}")
-        } else {
-            Log.i(TAG, "auto exposure pending=$pendingSample")
-        }
         builder.writeExposure(iso = iso, exposureNs = expNs, manual = manual)
     }
 
@@ -241,9 +210,6 @@ internal class CinemaExposure(
         return ExposureSnapshot(
             isoLabel = isoLabel,
             shutterLabel = shutterLabel,
-            // Blue whenever a value is in use — manual *or* sampled. This is
-            // Cinema Pro's own indicator: the button keeps its colour after an
-            // auto sample, so the operator can see the frozen value is active.
             isoManual = iso > 0,
             shutterManual = ns > 0L,
             isoPending = pendingSample == PENDING_ISO,
@@ -304,7 +270,6 @@ internal class CinemaExposure(
         clearTimeout()
         val runnable = Runnable {
             if (pendingSample == what) {
-                Log.i(TAG, "auto sample timed out")
                 pendingSample = PENDING_NONE
                 onChanged()
             }

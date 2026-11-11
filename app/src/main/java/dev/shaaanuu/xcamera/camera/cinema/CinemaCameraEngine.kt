@@ -99,8 +99,6 @@ internal class CinemaCameraEngine(private val context: Context, private val list
             ) {
                 val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
                 val expNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
-                val fdNs = result.get(CaptureResult.SENSOR_FRAME_DURATION) ?: 0L
-                Log.i(TAG, "result ISO=$iso exp=$expNs frameDur=$fdNs rec=$recording")
                 exposure.onCaptureResult(iso, expNs)
             }
         }
@@ -156,10 +154,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
     fun startRecording() = handler.post {
         if (closed || recording) return@post
-        if (!sessionConfigured) {
-            Log.w(TAG, "startRecording: session not ready")
-            return@post
-        }
+        if (!sessionConfigured) return@post
 
         try {
             val (uri, pfd) = createRecordingEntry()
@@ -171,7 +166,6 @@ internal class CinemaCameraEngine(private val context: Context, private val list
             recording = true
             rebuildRepeating()
             postState()
-            Log.i(TAG, "Recording started: $uri")
         } catch (error: Throwable) {
             Log.e(TAG, "startRecording failed", error)
             runCatching { recordingPfd?.close() }
@@ -199,11 +193,10 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         runCatching { pfd?.close() }
 
         if (samples == 0) {
-            Log.w(TAG, "Recording produced no samples, deleting")
+            Log.e(TAG, "Recording produced no samples, deleting")
             uri?.let { deleteRecordingEntry(it) }
         } else {
             uri?.let { finalizeRecordingEntry(it) }
-            Log.i(TAG, "Recording stopped: $samples samples, uri=$uri")
         }
 
         postState()
