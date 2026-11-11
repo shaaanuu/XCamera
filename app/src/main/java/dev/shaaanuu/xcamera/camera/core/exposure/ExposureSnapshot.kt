@@ -7,4 +7,7 @@ internal data class ExposureSnapshot(
     val shutterManual: Boolean,
     val isoPending: Boolean,
     val shutterPending: Boolean,
+    val shutterAngle: Float,
+    val shutterNanos: Long,
+    val iso: Int,
 )

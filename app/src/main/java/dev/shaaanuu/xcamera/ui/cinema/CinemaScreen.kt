@@ -21,7 +21,6 @@ import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraConfig
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
 import dev.shaaanuu.xcamera.camera.cinema.CinemaState
 import dev.shaaanuu.xcamera.ui.JetBrainsMono
-import kotlin.math.abs
 
 private val ISO_VALUES = listOf(64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800)
 
@@ -67,7 +66,10 @@ internal fun CinemaScreen(
 
     val currentEngine = rememberUpdatedState(engine)
 
-    LaunchedEffect(engine) { engineState.value = engine }
+    LaunchedEffect(engine, cinemaState?.sessionReady) {
+        engineState.value =
+            if (engine != null && cinemaState?.sessionReady == true) engine else null
+    }
 
     LaunchedEffect(cinemaState?.recording) { recordingState.value = cinemaState?.recording == true }
 
@@ -80,10 +82,11 @@ internal fun CinemaScreen(
     }
 
     val exposure = cinemaState?.exposure
-    val isoSelected = parseIso(exposure?.isoLabel) ?: 400
-    val shutterSelected = parseShutterAngle(exposure?.shutterLabel) ?: 360f
-    val shutterExposureLabel = parseExposureTime(exposure?.shutterLabel) ?: "1/60 SEC"
+    val isoSelected = exposure?.iso?.takeIf { it > 0 } ?: 400
+    val shutterSelected = exposure?.shutterAngle?.takeIf { it > 0f } ?: 360f
+    val shutterExposureLabel = formatExposureLabel(exposure?.shutterNanos ?: 0L)
     val lookId = cinemaState?.lookId ?: CinemaCameraConfig.DEFAULT_LOOK_ID
+    val sessionReady = cinemaState?.sessionReady == true
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         CinemaPreview(
@@ -101,7 +104,14 @@ internal fun CinemaScreen(
 
                                 override fun onReady() = Unit
 
-                                override fun onError(message: String) = Unit
+                                override fun onError(message: String) {
+                                    engine?.stop()
+                                    engine = null
+                                    cinemaState = null
+                                    engineState.value = null
+                                    recordingState.value = false
+                                    lookMenuVisible = false
+                                }
 
                                 override fun onStateChanged(state: CinemaState) {
                                     cinemaState = state
@@ -144,7 +154,7 @@ internal fun CinemaScreen(
             CinemaLookButton(
                 lookId = lookId,
                 expanded = lookMenuVisible,
-                enabled = engine != null,
+                enabled = sessionReady,
                 onToggle = { lookMenuVisible = !lookMenuVisible },
             )
             Text(
@@ -164,7 +174,7 @@ internal fun CinemaScreen(
         ) {
             CinemaLookCard(
                 lookId = lookId,
-                enabled = engine != null,
+                enabled = sessionReady,
                 onLookSelected = { id ->
                     engine?.setLook(id)
                     lookMenuVisible = false
@@ -180,22 +190,10 @@ internal fun CinemaScreen(
             shutterSelected = shutterSelected,
             shutterExposureLabel = shutterExposureLabel,
             shutterPending = exposure?.shutterPending == true,
-            enabled = engine != null,
-            onIsoSelected = { target ->
-                val from = ISO_VALUES.indexOf(isoSelected)
-                val to = ISO_VALUES.indexOf(target)
-                if (from >= 0 && to >= 0 && from != to) {
-                    repeat(abs(to - from)) { engine?.cycleIso() }
-                }
-            },
+            enabled = sessionReady,
+            onIsoSelected = { target -> engine?.setIso(target) },
             onAutoIso = { engine?.requestAutoIso() },
-            onShutterSelected = { target ->
-                val from = SHUTTER_VALUES.indexOf(shutterSelected)
-                val to = SHUTTER_VALUES.indexOf(target)
-                if (from >= 0 && to >= 0 && from != to) {
-                    repeat(abs(to - from)) { engine?.cycleShutter() }
-                }
-            },
+            onShutterSelected = { target -> engine?.setShutter(target) },
             onAutoShutter = { engine?.requestAutoShutter() },
             modifier =
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 260.dp).fillMaxWidth(),
@@ -203,16 +201,8 @@ internal fun CinemaScreen(
     }
 }
 
-private fun parseIso(label: String?): Int? = label?.removePrefix("ISO")?.trim()?.toIntOrNull()
-
-private fun parseShutterAngle(label: String?): Float? {
-    if (label == null) return null
-    val anglePart = label.substringBefore("(").trim().removeSuffix("°").trim()
-    return anglePart.toFloatOrNull()
-}
-
-private fun parseExposureTime(label: String?): String? {
-    if (label == null) return null
-    val match = Regex("""\(([^)]+)\)""").find(label) ?: return null
-    return "${match.groupValues[1].trim()} SEC"
+private fun formatExposureLabel(ns: Long): String {
+    if (ns <= 0L) return "auto"
+    val denom = Math.rint(1.0e9 / ns).toLong()
+    return "1/$denom SEC"
 }

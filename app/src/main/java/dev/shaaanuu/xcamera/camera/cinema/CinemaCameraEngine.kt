@@ -33,6 +33,7 @@ internal data class CinemaState(
     val exposure: ExposureSnapshot,
     val recording: Boolean,
     val lookId: Int,
+    val sessionReady: Boolean,
 )
 
 internal class CinemaCameraEngine(private val context: Context, private val listener: Listener) {
@@ -72,6 +73,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     @Volatile private var closed = false
     private var started = false
     @Volatile private var recording = false
+    @Volatile private var sessionReady = false
     @Volatile private var currentLookId: Int = CinemaCameraConfig.DEFAULT_LOOK_ID
 
     private var cameraDevice: CameraDevice? = null
@@ -138,6 +140,10 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     fun cycleIso() = handler.post { if (!closed) exposure.cycleIso() }
 
     fun cycleShutter() = handler.post { if (!closed) exposure.cycleShutter() }
+
+    fun setIso(value: Int) = handler.post { if (!closed) exposure.setIso(value) }
+
+    fun setShutter(value: Float) = handler.post { if (!closed) exposure.setShutter(value) }
 
     fun requestAutoIso() = handler.post { if (!closed) exposure.requestAutoIso() }
 
@@ -357,6 +363,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
                         session.setRepeatingRequest(request, captureCallback)
                         sessionConfigured = true
+                        sessionReady = true
 
                         mainHandler.post {
                             if (!closed) {
@@ -366,6 +373,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
                                         exposure.snapshot(),
                                         recording = recording,
                                         lookId = currentLookId,
+                                        sessionReady = true,
                                     )
                                 )
                             }
@@ -404,7 +412,13 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     }
 
     private fun postState() {
-        val state = CinemaState(exposure.snapshot(), recording = recording, lookId = currentLookId)
+        val state =
+            CinemaState(
+                exposure.snapshot(),
+                recording = recording,
+                lookId = currentLookId,
+                sessionReady = sessionReady,
+            )
         mainHandler.post { if (!closed) listener.onStateChanged(state) }
     }
 
@@ -459,6 +473,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
     private fun cleanup() {
         sessionConfigured = false
+        sessionReady = false
 
         cameraSession?.close()
         cameraSession = null

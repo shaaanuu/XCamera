@@ -140,6 +140,24 @@ internal class CinemaExposure(
         onChanged()
     }
 
+    fun setIso(value: Int) {
+        val index = availableIso.indexOf(value)
+        if (index < 0) return
+        currentIsoIndex = index
+        manualIso = value
+        cancelPendingSample()
+        onChanged()
+    }
+
+    fun setShutter(value: Float) {
+        val index = availableShutterAngles.indexOf(value)
+        if (index < 0) return
+        currentShutterIndex = index
+        manualExposureNs = shutterNanos(value)
+        cancelPendingSample()
+        onChanged()
+    }
+
     fun requestAutoIso() = requestSample(PENDING_ISO)
 
     fun requestAutoShutter() = requestSample(PENDING_SHUTTER)
@@ -198,11 +216,12 @@ internal class CinemaExposure(
     fun snapshot(): ExposureSnapshot {
         val iso = manualIso ?: sampledIso
         val ns = manualExposureNs ?: sampledExposureNs
+        val angle = selectedShutterAngle()
 
         val isoLabel = if (iso <= 0) "ISOauto" else "ISO$iso"
         val shutterLabel =
             when {
-                manualExposureNs != null -> shutterFullLabel(selectedShutterAngle())
+                manualExposureNs != null -> shutterFullLabel(angle)
                 ns <= 0L -> "SHauto"
                 else -> timeLabelOf(ns)
             }
@@ -214,6 +233,9 @@ internal class CinemaExposure(
             shutterManual = ns > 0L,
             isoPending = pendingSample == PENDING_ISO,
             shutterPending = pendingSample == PENDING_SHUTTER,
+            shutterAngle = angle,
+            shutterNanos = ns,
+            iso = iso,
         )
     }
 
