@@ -128,6 +128,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
         check(
             handler.post {
+                if (closed) return@post
                 try {
                     val characteristics =
                         controller.getCameraCharacteristics(CinemaCameraConfig.CAMERA_ID)
@@ -136,10 +137,14 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
                     surfaceTexture.setDefaultBufferSize(previewSize.width, previewSize.height)
                     previewSurface = Surface(surfaceTexture)
+                    encoderSurface = encoder.start()
+
+                    if (closed) {
+                        cleanup()
+                        return@post
+                    }
 
                     mainHandler.post { if (!closed) listener.onPreviewSizeSelected(previewSize) }
-
-                    encoderSurface = encoder.start()
                     openCamera(characteristics)
                 } catch (error: Throwable) {
                     fail("Cinema initialization failed: ${error.message}")
@@ -497,6 +502,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         mainHandler.post { listener.onError(message) }
     }
 
+    @Synchronized
     private fun cleanup() {
         sessionConfigured = false
         sessionReady = false
