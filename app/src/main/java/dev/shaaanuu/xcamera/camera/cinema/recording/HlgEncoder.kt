@@ -289,7 +289,7 @@ internal class HlgEncoder {
         running = false
 
         try {
-            drainThread?.join(1000)
+            drainThread?.join(200)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         }
