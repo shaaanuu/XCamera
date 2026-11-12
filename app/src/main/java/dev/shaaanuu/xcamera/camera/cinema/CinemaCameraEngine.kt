@@ -229,14 +229,6 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     @Synchronized
     fun stop() {
         if (closed) return
-        if (recording) {
-            recording = false
-            encoder.stopRecording()
-            recordingPfd?.let { runCatching { it.close() } }
-            recordingUri?.let { finalizeRecordingEntry(it) }
-            recordingUri = null
-            recordingPfd = null
-        }
         closed = true
         cleanup()
         cameraThread.quitSafely()
@@ -494,6 +486,7 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         }
     }
 
+    @Synchronized
     private fun fail(message: String) {
         if (closed) return
         closed = true
@@ -504,6 +497,23 @@ internal class CinemaCameraEngine(private val context: Context, private val list
 
     @Synchronized
     private fun cleanup() {
+        if (recording) {
+            recording = false
+            encoder.stopRecording()
+            val samples = encoder.samplesWritten
+            val uri = recordingUri
+            val pfd = recordingPfd
+            recordingUri = null
+            recordingPfd = null
+            runCatching { pfd?.close() }
+            if (samples == 0) {
+                Log.e(TAG, "Recording produced no samples, deleting")
+                uri?.let { deleteRecordingEntry(it) }
+            } else {
+                uri?.let { finalizeRecordingEntry(it) }
+            }
+        }
+
         sessionConfigured = false
         sessionReady = false
 
