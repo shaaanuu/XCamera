@@ -15,9 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraConfig
 import dev.shaaanuu.xcamera.camera.cinema.CinemaCameraEngine
 import dev.shaaanuu.xcamera.camera.cinema.CinemaState
@@ -59,13 +62,27 @@ internal fun CinemaScreen(
     recordingState: MutableState<Boolean>,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var engine by remember { mutableStateOf<CinemaCameraEngine?>(null) }
     var previewSize by remember { mutableStateOf<Size?>(null) }
     var cinemaState by remember { mutableStateOf<CinemaState?>(null) }
     var lookMenuVisible by remember { mutableStateOf(false) }
+    var foreground by remember { mutableStateOf(true) }
 
     val currentEngine = rememberUpdatedState(engine)
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> foreground = true
+                Lifecycle.Event.ON_STOP -> foreground = false
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(engine, cinemaState?.sessionReady) {
         engineState.value =
@@ -90,65 +107,67 @@ internal fun CinemaScreen(
     val sessionReady = cinemaState?.sessionReady == true
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        CinemaPreview(
-            previewSize = previewSize,
-            modifier = Modifier.fillMaxSize(),
-            onSurfaceReady = { surfaceTexture, width, height ->
-                if (engine == null) {
-                    val newEngine =
-                        CinemaCameraEngine(
-                            context,
-                            object : CinemaCameraEngine.Listener {
-                                override fun onPreviewSizeSelected(size: Size) {
-                                    previewSize = size
-                                }
+        if (foreground) {
+            CinemaPreview(
+                previewSize = previewSize,
+                modifier = Modifier.fillMaxSize(),
+                onSurfaceReady = { surfaceTexture, width, height ->
+                    if (engine == null) {
+                        val newEngine =
+                            CinemaCameraEngine(
+                                context,
+                                object : CinemaCameraEngine.Listener {
+                                    override fun onPreviewSizeSelected(size: Size) {
+                                        previewSize = size
+                                    }
 
-                                override fun onReady() = Unit
+                                    override fun onReady() = Unit
 
-                                override fun onError(message: String) {
-                                    engine?.stop()
-                                    engine = null
-                                    cinemaState = null
-                                    engineState.value = null
-                                    recordingState.value = false
-                                    lookMenuVisible = false
-                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                                }
+                                    override fun onError(message: String) {
+                                        engine?.stop()
+                                        engine = null
+                                        cinemaState = null
+                                        engineState.value = null
+                                        recordingState.value = false
+                                        lookMenuVisible = false
+                                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                    }
 
-                                override fun onStateChanged(state: CinemaState) {
-                                    cinemaState = state
-                                }
+                                    override fun onStateChanged(state: CinemaState) {
+                                        cinemaState = state
+                                    }
 
-                                override fun onAutoSampleFailed(reason: String) {
-                                    Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                        )
+                                    override fun onAutoSampleFailed(reason: String) {
+                                        Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                            )
 
-                    engine = newEngine
+                        engine = newEngine
 
-                    try {
-                        newEngine.start(
-                            surfaceTexture = surfaceTexture,
-                            viewWidth = width,
-                            viewHeight = height,
-                        )
-                    } catch (error: Throwable) {
-                        newEngine.stop()
-                        engine = null
+                        try {
+                            newEngine.start(
+                                surfaceTexture = surfaceTexture,
+                                viewWidth = width,
+                                viewHeight = height,
+                            )
+                        } catch (error: Throwable) {
+                            newEngine.stop()
+                            engine = null
+                        }
                     }
-                }
-            },
-            onSurfaceDestroyed = {
-                engine?.stop()
-                engine = null
-                previewSize = null
-                cinemaState = null
-                engineState.value = null
-                recordingState.value = false
-                lookMenuVisible = false
-            },
-        )
+                },
+                onSurfaceDestroyed = {
+                    engine?.stop()
+                    engine = null
+                    previewSize = null
+                    cinemaState = null
+                    engineState.value = null
+                    recordingState.value = false
+                    lookMenuVisible = false
+                },
+            )
+        }
 
         Row(
             modifier =
