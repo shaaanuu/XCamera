@@ -1,6 +1,7 @@
 package dev.shaaanuu.xcamera.camera.cinema
 
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
 import android.os.Handler
 import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
 import dev.shaaanuu.xcamera.camera.core.exposure.writeExposure
@@ -9,14 +10,17 @@ internal class CinemaExposure(
     private val frameDurationNs: Long,
     private val handler: Handler,
     private val onChanged: () -> Unit,
+    private val onAutoSampleFailed: (String) -> Unit,
 ) {
     companion object {
         const val PENDING_NONE = 0
         const val PENDING_ISO = 1
         const val PENDING_SHUTTER = 2
 
-        private const val SAMPLE_RESULTS = 8
-        private const val SAMPLE_TIMEOUT_MS = 2_000L
+        private const val SKIP_FRAMES = 3
+        private const val MAX_WAIT_FRAMES = 120
+        private const val SAMPLE_TIMEOUT_MS = 10_000L
+        private const val EXPOSURE_TOLERANCE_NS = 1_000L
 
         private val ISO_SERIES =
             intArrayOf(
@@ -95,6 +99,9 @@ internal class CinemaExposure(
     @Volatile private var lastResultIso: Int = 0
     @Volatile private var lastResultExposureNs: Long = 0L
 
+    private var isoMinInUse: Int = 0
+    private var isoMaxInUse: Int = 0
+
     private var sampleTimeout: Runnable? = null
 
     fun buildOptions(sensorIsoLower: Int, sensorIsoUpper: Int) {
@@ -114,6 +121,9 @@ internal class CinemaExposure(
             }
         }
 
+        isoMinInUse = availableIso.firstOrNull() ?: 0
+        isoMaxInUse = availableIso.lastOrNull() ?: 0
+
         val isoIdx = availableIso.indexOf(CinemaCameraConfig.DEFAULT_ISO)
         currentIsoIndex = if (isoIdx >= 0) isoIdx else 0
         manualIso = if (isoIdx >= 0) CinemaCameraConfig.DEFAULT_ISO else null
@@ -123,6 +133,8 @@ internal class CinemaExposure(
         manualExposureNs =
             if (shIdx >= 0) shutterNanos(CinemaCameraConfig.DEFAULT_SHUTTER_ANGLE) else null
     }
+
+    fun isSampling(): Boolean = pendingSample != PENDING_NONE
 
     fun cycleIso() {
         if (availableIso.isEmpty()) return
@@ -163,6 +175,10 @@ internal class CinemaExposure(
     fun requestAutoShutter() = requestSample(PENDING_SHUTTER)
 
     private fun requestSample(what: Int) {
+        if (availableIso.isEmpty() || availableShutterAngles.isEmpty()) {
+            onAutoSampleFailed("Camera did not report available values.")
+            return
+        }
         pendingSample = what
         sampleResults = 0
         scheduleTimeout(what)
@@ -176,21 +192,89 @@ internal class CinemaExposure(
         clearTimeout()
     }
 
-    fun onCaptureResult(iso: Int, exposureNs: Long) {
+    fun onCaptureResult(iso: Int, exposureNs: Long, aeState: Int) {
         if (iso > 0) lastResultIso = iso
         if (exposureNs > 0L) lastResultExposureNs = exposureNs
 
         val want = pendingSample
         if (want == PENDING_NONE) return
-        if (++sampleResults < SAMPLE_RESULTS) return
+        if (++sampleResults <= SKIP_FRAMES) return
+
+        when (aeState) {
+            CaptureResult.CONTROL_AE_STATE_INACTIVE -> {
+                if (sampleResults > MAX_WAIT_FRAMES) {
+                    pendingSample = PENDING_NONE
+                    clearTimeout()
+                    onAutoSampleFailed("Auto-exposure did not engage. Set manually.")
+                    onChanged()
+                }
+            }
+            CaptureResult.CONTROL_AE_STATE_FLASH_REQUIRED -> {
+                pendingSample = PENDING_NONE
+                clearTimeout()
+                onAutoSampleFailed("Too dark. Set ISO and shutter manually.")
+                onChanged()
+            }
+            CaptureResult.CONTROL_AE_STATE_CONVERGED -> acceptSample(want)
+            CaptureResult.CONTROL_AE_STATE_SEARCHING,
+            CaptureResult.CONTROL_AE_STATE_LOCKED,
+            CaptureResult.CONTROL_AE_STATE_PRECAPTURE -> {
+                if (sampleResults > MAX_WAIT_FRAMES) {
+                    pendingSample = PENDING_NONE
+                    clearTimeout()
+                    onAutoSampleFailed("Auto-exposure did not converge.")
+                    onChanged()
+                }
+            }
+            else -> {
+                if (sampleResults > MAX_WAIT_FRAMES) {
+                    pendingSample = PENDING_NONE
+                    clearTimeout()
+                    onAutoSampleFailed("Auto-exposure failed.")
+                    onChanged()
+                }
+            }
+        }
+    }
+
+    private fun acceptSample(want: Int) {
+        val tooDark =
+            isoMaxInUse > 0 &&
+                lastResultIso >= isoMaxInUse &&
+                lastResultExposureNs >= frameDurationNs - EXPOSURE_TOLERANCE_NS
+        val tooBright =
+            isoMinInUse > 0 &&
+                lastResultIso <= isoMinInUse &&
+                lastResultExposureNs <=
+                    CinemaCameraConfig.VIDEO_MIN_SHUTTER_NS + EXPOSURE_TOLERANCE_NS
+
+        if (tooDark) {
+            pendingSample = PENDING_NONE
+            clearTimeout()
+            onAutoSampleFailed("Too dark. Set ISO and shutter manually.")
+            onChanged()
+            return
+        }
+        if (tooBright) {
+            pendingSample = PENDING_NONE
+            clearTimeout()
+            onAutoSampleFailed("Too bright. Set ISO and shutter manually.")
+            onChanged()
+            return
+        }
 
         if (want == PENDING_ISO && lastResultIso > 0) {
             val snapped = nearestIso(lastResultIso)
+            val previous = manualIso ?: sampledIso
             sampledIso = snapped
             manualIso = null
             currentIsoIndex = availableIso.indexOf(snapped).coerceAtLeast(0)
             pendingSample = PENDING_NONE
             clearTimeout()
+            onAutoSampleFailed(
+                if (snapped == previous) "ISO sample: $snapped (unchanged)"
+                else "ISO sample: $snapped"
+            )
             onChanged()
             return
         }
@@ -202,6 +286,7 @@ internal class CinemaExposure(
                 availableShutterAngles.indexOfFirst { shutterNanos(it) == snapped }.coerceAtLeast(0)
             pendingSample = PENDING_NONE
             clearTimeout()
+            onAutoSampleFailed("Shutter sample: ${timeLabelOf(snapped)}")
             onChanged()
         }
     }
@@ -293,6 +378,7 @@ internal class CinemaExposure(
         val runnable = Runnable {
             if (pendingSample == what) {
                 pendingSample = PENDING_NONE
+                onAutoSampleFailed("Auto timed out. Set manually.")
                 onChanged()
             }
         }

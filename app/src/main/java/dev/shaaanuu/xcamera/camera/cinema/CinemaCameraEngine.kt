@@ -24,6 +24,7 @@ import dev.shaaanuu.xcamera.camera.cinema.recording.HlgEncoder
 import dev.shaaanuu.xcamera.camera.core.CameraController
 import dev.shaaanuu.xcamera.camera.core.CameraSession
 import dev.shaaanuu.xcamera.camera.core.exposure.ExposureSnapshot
+import dev.shaaanuu.xcamera.camera.sony.SonyVendorKeys
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,6 +46,8 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         fun onError(message: String)
 
         fun onStateChanged(state: CinemaState)
+
+        fun onAutoSampleFailed(reason: String)
     }
 
     companion object {
@@ -61,14 +64,21 @@ internal class CinemaCameraEngine(private val context: Context, private val list
     private val encoder = HlgEncoder()
 
     private val exposure =
-        CinemaExposure(frameDurationNs = CinemaCameraConfig.FRAME_DURATION_NS, handler = handler) {
-            handler.post {
-                if (!closed) {
-                    rebuildRepeating()
-                    postState()
+        CinemaExposure(
+            frameDurationNs = CinemaCameraConfig.FRAME_DURATION_NS,
+            handler = handler,
+            onChanged = {
+                handler.post {
+                    if (!closed) {
+                        rebuildRepeating()
+                        postState()
+                    }
                 }
-            }
-        }
+            },
+            onAutoSampleFailed = { reason ->
+                mainHandler.post { if (!closed) listener.onAutoSampleFailed(reason) }
+            },
+        )
 
     @Volatile private var closed = false
     private var started = false
@@ -101,7 +111,10 @@ internal class CinemaCameraEngine(private val context: Context, private val list
             ) {
                 val iso = result.get(CaptureResult.SENSOR_SENSITIVITY) ?: 0
                 val expNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME) ?: 0L
-                exposure.onCaptureResult(iso, expNs)
+                val aeState =
+                    result.get(CaptureResult.CONTROL_AE_STATE)
+                        ?: CaptureResult.CONTROL_AE_STATE_INACTIVE
+                exposure.onCaptureResult(iso, expNs, aeState)
             }
         }
 
@@ -427,9 +440,14 @@ internal class CinemaCameraEngine(private val context: Context, private val list
         characteristics: CameraCharacteristics,
         recording: Boolean,
     ): CaptureRequest.Builder {
+        val sampling = exposure.isSampling()
         return camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
-            set(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_PORTRAIT)
+            set(
+                CaptureRequest.CONTROL_SCENE_MODE,
+                if (sampling) CaptureRequest.CONTROL_SCENE_MODE_DISABLED
+                else CaptureRequest.CONTROL_SCENE_MODE_PORTRAIT,
+            )
             set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
             set(CaptureRequest.CONTROL_AWB_MODE, CaptureRequest.CONTROL_AWB_MODE_AUTO)
 
@@ -453,12 +471,20 @@ internal class CinemaCameraEngine(private val context: Context, private val list
                 )
             }
 
-            SonyCinemaSettings.applyCinemaPipeline(
-                builder = this,
-                activeArrayWidth = activeArrayWidth,
-                activeArrayHeight = activeArrayHeight,
-                focalLengthMm = focalLengthMm,
-            )
+            if (sampling) {
+                // Sony's aeMode = 0 (set for manual) blocks standard AE.
+                // Override to 1 to re-enable the HAL's AE path during the
+                // sample. All other Sony pipeline keys are skipped here
+                // because exposureTimeLimit / aeRegionMode also interfere.
+                SonyVendorKeys.aeMode?.let { set(it, 1.toByte()) }
+            } else {
+                SonyCinemaSettings.applyCinemaPipeline(
+                    builder = this,
+                    activeArrayWidth = activeArrayWidth,
+                    activeArrayHeight = activeArrayHeight,
+                    focalLengthMm = focalLengthMm,
+                )
+            }
             SonyCinemaSettings.applyCinemaLook(builder = this, lookId = currentLookId)
         }
     }

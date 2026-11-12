@@ -1,6 +1,7 @@
 package dev.shaaanuu.xcamera.ui.cinema
 
 import android.util.Size
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -111,10 +112,15 @@ internal fun CinemaScreen(
                                     engineState.value = null
                                     recordingState.value = false
                                     lookMenuVisible = false
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                                 }
 
                                 override fun onStateChanged(state: CinemaState) {
                                     cinemaState = state
+                                }
+
+                                override fun onAutoSampleFailed(reason: String) {
+                                    Toast.makeText(context, reason, Toast.LENGTH_SHORT).show()
                                 }
                             },
                         )
